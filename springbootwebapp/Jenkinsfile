@@ -1,0 +1,78 @@
+pipeline {
+    agent any
+
+    parameters {
+        booleanParam(defaultValue: true, description: "", name: 'Sonar_Scan')
+        booleanParam(defaultValue: true, description: "", name: 'Terraform_Deploy')
+    }
+    environment {
+        PATH = "/usr/local/bin:/usr/bin:/usr/local/sbin:${env.PATH}"
+    }
+    stages {
+        stage("Maven Environment") {
+            stages {
+                stage('Sonar Scan') {
+                    when {
+                        beforeAgent true
+                        expression { params.Sonar_Scan == true }
+                    }
+                    steps {
+                        withSonarQubeEnv('Sonar'){
+                            sh 'cd springbootwebapp; mvn -B clean compile sonar:sonar'
+                        }
+                    }
+                }
+                stage('Unit Test') {
+                    steps {
+                        sh 'cd springbootwebapp; mvn -B test'
+                    }
+                }
+                stage('Fortify Scan') {
+                    steps {
+                        sh 'ansible-playbook -i /var/lib/jenkins/devops_hosts $WORKSPACE/ansible/playbooks/fortify-test-scan.yml --extra-vars \"ansible_ssh_user=ec2-user\"'
+                        sh 'aws s3 cp s3://daas-fortify-installer/fortify-scan.pdf fortify-scan.pdf'
+                        archiveArtifacts 'fortify-scan.pdf'
+                    }
+                }
+                stage('Build') {
+                    steps {
+                        sh 'cd springbootwebapp; mvn -B -DskipTests clean package'
+                    }
+                }
+                stage('Push to Nexus') {
+                    steps {
+                        sh 'cd springbootwebapp; mvn -B deploy'
+                    }
+                }
+            }
+        }
+        stage("Terraform") {
+            when {
+                beforeAgent true
+                expression { params.Terraform_Deploy == true }
+            }
+            steps {
+                sh 'cd terraform; /usr/local/bin/terraform init'
+                sh 'cd terraform; /usr/local/bin/terraform plan'
+                sh 'cd terraform; /usr/local/bin/terraform apply -auto-approve'
+                sh 'sleep 60'
+            }
+        }
+        stage("Ansible deploy") {
+            steps {
+                sh 'export NEXUS_IP=`cat /var/lib/jenkins/nexus_ip`; export ANSIBLE_INVENTORY_ENABLED=script; export ANSIBLE_TF_DIR=`pwd`/terraform; export ANSIBLE_TF_BIN=/usr/local/bin/terraform; ansible-playbook -i /etc/ansible/terraform.py $WORKSPACE/ansible/playbooks/demo-app.yml --extra-vars \"ansible_ssh_user=ec2-user nexus_ip=\"$NEXUS_IP\"\"'
+            }
+        }
+        stage("Automated Selenium Test") {
+            agent any
+            steps {
+                //sh '/usr/local/bin/docker-compose up -d'
+                sh '''
+                    export DEMO_APP_IP=`/usr/local/bin/terraform output -state="/var/lib/jenkins/terraform_state_files/terraform.tfstate" demo-app-ip` 
+                    cd selenium-jupiter-example; mvn clean verify -Durl="http://$DEMO_APP_IP:8080" -B
+                '''
+                //sh '/usr/local/bin/docker-compose stop'
+            }
+        }
+    }
+}
