@@ -1,0 +1,14 @@
+#! /usr/bin/sh
+
+{% if create_sonar %}
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo cp /root/.my.cnf /sonar-ebs/my.cnf"
+sleep 10
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo chmod 777 /sonar-ebs/my.cnf"
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo service sonar stop"
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo service mysqld stop"
+sudo bash {{ jenkins_home }}/devops_scripts/snapshot_backup.sh {{ project_name }} sonar {{ vpc_name }} us-east-1 true
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo service mysqld start"
+ansible -i /var/lib/jenkins/devops_hosts sonar -u ec2-user -a "sudo service sonar start"
+{% else %}
+echo "sonar is not part of the devops stack"
+{% endif %}

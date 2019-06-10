@@ -1,0 +1,14 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<slave>
+  <name>chefInspec</name>
+  <description>Used for Chef Inspec scan</description>
+  <remoteFS>/home/ec2-user/jenkins</remoteFS>
+  <numExecutors>1</numExecutors>
+  <mode>EXCLUSIVE</mode>
+  <retentionStrategy class="hudson.slaves.RetentionStrategy$Always"/>
+  <launcher class="hudson.slaves.CommandLauncher" plugin="command-launcher@1.3">
+    <agentCommand>ssh ec2-user@{{ groups['inspec'][0] }} exec java -jar /home/ec2-user/agent.jar</agentCommand>
+  </launcher>
+  <label>chefinspec</label>
+  <nodeProperties/>
+</slave>

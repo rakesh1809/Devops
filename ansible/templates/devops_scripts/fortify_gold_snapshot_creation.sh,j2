@@ -1,0 +1,7 @@
+#! /usr/bin/sh
+
+{% if create_fortify %}
+sudo bash {{ jenkins_home }}/snapshot_backup.sh {{ project_name }} fortify {{ vpc_name }} us-east-1 true
+{% else %}
+echo "fortify is not part of the devops stack"
+{% endif %}
