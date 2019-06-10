@@ -1,0 +1,17 @@
+---
+
+- name: Install boto
+  pip:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - awscli
+    - boto
+    - boto3
+  become: yes
+
+- include_tasks: ebs_mount.yml
+  when: mount_type == 'ebs'
+
+- include_tasks: efs_mount.yml
+  when: mount_type == 'efs'

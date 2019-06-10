@@ -1,0 +1,54 @@
+---
+
+- name: Determine gold snapshot facts
+  ec2_snapshot_facts:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "{{ project_name }}-{{ vpc_name }}-devops-{{ machine }}-snapshot"
+      "tag:purpose": gold-image-deploy
+  register: gold_snapshot_facts
+
+- name: Determine gold volume facts
+  ec2_vol_facts:
+    region: "{{ aws_region }}"
+    filters:
+      "tag:Name": "{{ project_name }}-{{ vpc_name }}-devops-{{ machine }}-ebs"
+      "tag:purpose": "{{ machine }}-gold-volume"
+      attachment.instance-id: "{{ instance_id }}"
+  register: gold_volume_facts
+
+- name: Create a volume from the gold snapshot
+  when: 
+    - gold_snapshot_facts.snapshots != []
+    - gold_volume_facts.volumes == []
+  ec2_vol:
+    device_name: /dev/sdf
+    delete_on_termination: yes
+    instance: "{{ instance_id }}"
+    snapshot: "{{ gold_snapshot_facts.snapshots[0].snapshot_id }}"
+    region: "{{ aws_region }}"
+    tags: 
+      Name: "{{ project_name }}-{{ vpc_name }}-devops-{{ machine }}-ebs"
+      purpose: "{{ machine }}-gold-volume"
+
+- name: Ensure mount directory exists.
+  file:
+    path: "{{ mount_dir }}"
+    state: directory
+
+- name: Create a filesystem
+  filesystem:
+    fstype: "{{ ebs_fstype }}"
+    dev: "{{ ebs_device }}"
+
+- name: Ensure EBS volume is mounted.
+  mount:
+    name: "{{ mount_dir }}"
+    src: "{{ ebs_device }}"
+    state: mounted
+    fstype: "{{ ebs_fstype }}"
+
+# Print the contents of the mount to the log.
+- command: "ls -lah {{ mount_dir }}"
+  register: ebs_contents
+- debug: var=ebs_contents

@@ -1,0 +1,22 @@
+
+---
+- name: Check inspec version
+  shell: "inspec version | head -n1 | grep {{ inspecVersion }}"
+  failed_when: false
+  changed_when: false
+  register: currentInspecVersion
+
+
+# - name: Download and install inspec rhel
+#   yum:
+#     name: https://packages.chef.io/files/stable/inspec/{{ inspecVersion }}/el/7/inspec-{{ inspecVersion }}-1.el7.x86_64.rpm
+#     checksum: "d0390ce6eed406695da130a9ecd648cc5ed42aba7b5b5a00ae693b97412719f1"
+#     state: present
+#   when: currentInspecVersion.rc != 0 and ansible_os_family == "RedHat"
+
+- debug:
+    msg: "{{ hostvars[inventory_hostname].ansible_distribution }}"
+
+- name: Install Inspec RPM from chef stable version
+  command: rpm -i https://packages.chef.io/files/stable/inspec/{{ inspecVersion }}/el/7/inspec-{{ inspecVersion }}-1.el7.x86_64.rpm
+  when: currentInspecVersion.rc != 0 and ansible_os_family == "RedHat"
