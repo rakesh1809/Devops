@@ -1,0 +1,7 @@
+---
+
+- name: Find the list of AMIs
+  command: "aws ec2 describe-images --region us-east-1 --filters \"Name=name,Values=EAST-RH 7-5*\" \"Name=owner-id,Values=842420567215\" --query 'sort_by(Images, &CreationDate)[-1].[ImageId][0]'"
+  register: out
+- debug:
+    msg: "{{ out }}"

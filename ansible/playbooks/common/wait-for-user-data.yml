@@ -1,0 +1,7 @@
+---
+
+- name: Wait for user data section to be complete
+  wait_for:
+    path: /user-data-complete
+    timeout: 120
+    sleep: 5

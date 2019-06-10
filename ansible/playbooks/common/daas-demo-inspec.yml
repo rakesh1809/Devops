@@ -1,0 +1,46 @@
+---
+
+- name: Create Pipeline chefinspec job directory
+  file:
+    dest: "{{ jenkins_home }}/jobs/Pipeline-ChefInfoSec-Scan"
+    owner: jenkins
+    group: jenkins
+    state: directory
+    mode: 0750
+  become: yes
+
+- name: Create pipeline chefinspec job config.xml
+  template:
+    src: ../templates/inspecpipelinejob.xml.j2
+    dest: "{{ jenkins_home }}/jobs/Pipeline-ChefInfoSec-Scan/config.xml"
+    owner: jenkins
+    group: jenkins
+    mode: 0640
+  become: yes
+
+- name: Create chefInspec nodes directory
+  file:
+    dest: "{{ jenkins_home }}/nodes/chefInspec"
+    owner: jenkins
+    group: jenkins
+    state: directory
+    mode: 0750
+  become: yes
+
+- name: Create chefInspec node(slave) config.xml
+  template:
+    src: ../templates/inspecnode.xml.j2
+    dest: "{{ jenkins_home }}/nodes/chefInspec/config.xml"
+    owner: jenkins
+    group: jenkins
+    mode: 0640
+  become: yes
+  
+- name: Restart jenkins
+  service:
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+    enabled: "{{ item.enabled }}"
+  become: yes
+  with_items:
+    - { name: 'jenkins', state: 'restarted', enabled: true }

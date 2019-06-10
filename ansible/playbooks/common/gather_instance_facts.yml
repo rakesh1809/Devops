@@ -1,0 +1,42 @@
+---
+
+- name: Ensure Pip is installed.
+  package:
+    name: "python-pip"
+    state: present
+  become: yes
+
+- name: Install boto
+  pip:
+    name: "{{ item }}"
+    state: latest
+  with_items:
+    - awscli
+    - boto
+    - boto3
+  become: yes
+
+- name: Determine the instance id
+  uri:
+    url: http://169.254.169.254/latest/meta-data/instance-id
+    return_content: yes
+  register: instance_id
+
+- name: Gather instance facts for the current host
+  ec2_instance_facts:
+    region: "{{ aws_region }}"
+    instance_ids:
+      - "{{ instance_id.content }}"
+  register: instnace_facts
+
+- name: Set variables
+  set_fact:
+    instance_id: "{{ instance_id.content }}"
+    instance_facts: "{{ instnace_facts.instances[0] }}"
+
+- debug:
+    msg: "{{ instance_facts }}"
+
+
+
+

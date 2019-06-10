@@ -1,0 +1,79 @@
+---
+
+- name: Get the Nexus password from the parameter store
+  command: "aws ssm get-parameters --names NexusAdminPassword --with-decryption --region {{ aws_region }} --query \"Parameters[*].Value\" --output text"
+  register: nexus_admin_password_result
+
+- name: Set the Nexus password
+  set_fact: 
+    nexus_admin_password: "{{ nexus_admin_password_result.stdout }}"
+
+- name: Create persistent Maven repo
+  file:
+    dest: "{{ jenkins_home }}/.m2"
+    owner: jenkins
+    group: jenkins
+    state: directory
+    mode: 0700
+  become: yes
+
+- name: Create Maven settings.xml file
+  template:
+    src: ../templates/settings.xml.j2
+    dest: "{{ jenkins_home }}/.m2/settings.xml"
+    owner: jenkins
+    group: jenkins
+  become: yes
+
+- name: Create job directory
+  file:
+    dest: "{{ jenkins_home }}/jobs/daas-demo-application"
+    owner: jenkins
+    group: jenkins
+    state: directory
+    mode: 0750
+  become: yes
+
+- name: Create job config.xml
+  template:
+    src: ../templates/jenkins_jobs/config.xml.j2
+    dest: "{{ jenkins_home }}/jobs/daas-demo-application/config.xml"
+    owner: jenkins
+    group: jenkins
+    mode: 0640
+  become: yes
+
+- name: Create file to read in the nexus ip from the jenkins file
+  shell: "echo {{ groups['nexus'][0] }} > {{ jenkins_home }}/nexus_ip"
+  become: true
+  when: create_nexus 
+
+- name: Update permission on nexus_ip file
+  file:
+    dest: "{{ jenkins_home }}/nexus_ip"
+    owner: jenkins
+    group: jenkins
+    mode: 0700
+  become: yes
+  when: create_nexus
+
+- name: Copy script to setup chrome browser for selenium
+  copy:
+    src: ../../files/google-chrome.repo
+    dest: /etc/yum.repos.d/google-chrome.repo
+  become: yes
+
+- name: Install chrome browser
+  package:
+    name: google-chrome-stable
+    state: present
+  become: yes
+  
+- name: Restart jenkins
+  service:
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+    enabled: "{{ item.enabled }}"
+  become: yes
+  with_items:
+    - { name: 'jenkins', state: 'restarted', enabled: true }
