@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  Author: Sreeni Gadila @GDIT DaaS team
+  Description: |-
+    EC2 Instance Start/Stop on US-EAST-1 Region
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: S3 Bucket Name (S3 Bucket where your Lambda Scripts are located)
+    Default: pl-enter-s3-bucket-name
+Resources:
+  EC2StartStopRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+  EC2StartStopPolicy:
+    DependsOn:
+      - EC2StartStopRole
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: ec2-startstop-role
+      Roles:
+        - !Ref EC2StartStopRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'logs:*'
+            Resource:
+              - 'arn:aws:logs:*:*:*'
+          - Effect: Allow
+            Action:
+              - 'ec2:DescribeInstanceAttribute'
+              - 'ec2:DescribeInstanceStatus'
+              - 'ec2:DescribeInstances'
+              - 'ec2:StartInstances'
+              - 'ec2:StopInstances'
+            Resource:
+              - '*'
+
+  StartScheduler:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Instance Start scheduler
+      ScheduleExpression: cron(0 13 ? * MON-FRI *)
+      Targets:
+      - Arn: !GetAtt StartAllLambda.Arn
+        Id: StartAllLambda_Target
+
+  StartSchedulerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StartAllLambda
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StartScheduler.Arn
+
+  StopScheduler:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Instance Stop scheduler
+      ScheduleExpression: cron(0 22 ? * MON-FRI *)
+      Targets:
+      - Arn: !GetAtt StopAllLambda.Arn
+        Id: StopAllLambda_Target
+
+  StopSchedulerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StopAllLambda
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt StopScheduler.Arn
+
+  StartAllLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - EC2StartStopRole
+      - EC2StartStopPolicy
+    Properties:
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: ec2-startstop.zip
+      Role: !GetAtt 
+        - EC2StartStopRole
+        - Arn
+      Timeout: 60
+      Handler: start_all.lambda_handler
+      Runtime: python2.7
+      MemorySize: 128
+
+  StopAllLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn:
+      - EC2StartStopRole
+      - EC2StartStopPolicy
+    Properties:
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: ec2-startstop.zip
+      Role: !GetAtt 
+        - EC2StartStopRole
+        - Arn
+      Timeout: 60
+      Handler: stop_all.lambda_handler
+      Runtime: python2.7
+      MemorySize: 128

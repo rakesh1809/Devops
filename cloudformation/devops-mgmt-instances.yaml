@@ -1,0 +1,787 @@
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "General Parameters"
+        Parameters:
+          - FrameworkStackName
+          - GoldImageId
+      -
+        Label:
+          default: "GitHub Parameters"
+        Parameters:
+          - GithubUN
+          - GithubBranch
+          - GithubRepo
+      -
+        Label:
+          default: "Jenkins Parameters"
+        Parameters:
+          - JenkinsMasterKey
+          - JenkinsDeployKey
+          # - JenkinsEFSCreation
+          - JenkinsVolumeSize
+          - UseJenkinsSnapshot
+          - JenkinsEBSSnapshot
+      -
+        Label:
+          default: "Nexus Parameters"
+        Parameters:
+          - CreateNexus
+          - NexusVolumeSize
+          - UseNexusSnapshot
+          - NexusEBSSnapshot
+      -
+        Label:
+          default: "Sonar Parameters"
+        Parameters:
+          - CreateSonar
+          - SonarVolumeSize
+          - UseSonarSnapshot
+          - SonarEBSSnapshot
+      -
+        Label:
+          default: "Fortify Parameters"
+        Parameters:
+          - CreateFortify
+          - FortifyEBSCreation
+          - FortifyVolumeSize
+          - UseFortifySnapshot
+          - FortifyEBSSnapshot
+      -
+        Label:
+          default: "Inspec Parameters"
+        Parameters:
+          - CreateInspec
+          - InspecEBSCreation
+          - InspecVolumeSize
+          - UseInspecSnapshot
+          - InspecEBSSnapshot
+
+        Label:
+          default: "Archiva Parameters"
+        Parameters:
+          - CreateArchiva
+          - ArchivaEBSCreation
+          - ArchivaVolumeSize
+          - UseArchivaSnapshot
+          - ArchivaEBSSnapshot
+
+Parameters:
+  FrameworkStackName:
+    Type: String
+    Default: devops-mgmt-framework
+    Description: Provide the stackname for the devops framework that this stack depends on
+  GoldImageId:
+    Type: String
+    Default: ami-00791ec6aab7b07e1
+    Description: Please enter latest AMI ID to launch EC2's from
+  GithubUN:
+    Type : String
+    Default: 'CCS_HIOS_jenkins_rw'
+    Description: username of the GitHub service account
+  GithubBranch:
+    Type: String
+    Default: hios
+    Description: devops-mgmt branch to be used in userdata
+  GithubRepo:
+    Type: String
+    Default: 'github.cms.gov/DaaS/devops-mgmt.git'
+    Description: repo where the devops mgmt framework is stored
+  JenkinsMasterKey:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: daas-hios-jenkins-master-key
+    Description: ssh key created during the initial setup
+  JenkinsDeployKey:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: daas-hios-jenkins-deploy-key
+    Description: ssh key created during the initial setup
+  # JenkinsEFSCreation:
+  #   Type: String
+  #   AllowedValues: [true, false]
+  #   Default: false
+  #   Description: Conditional for Jenkins EFS creation
+  JenkinsVolumeSize:
+    Type: Number
+    MinValue: 1
+    MaxValue: 200
+    Default: 30
+    Description: Ebs volume size for jenkins
+  UseJenkinsSnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional to create EBS volume from an existing snapshot.
+  JenkinsEBSSnapshot:
+    Type: String
+    Default: snap-09fffaf1c21d3ca10
+    Description: Snapshot to be used when UseJenkinsSnapshot is true.
+  CreateNexus:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Nexus EC2 creation
+  CreateSonar:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Sonar EC2 creation
+  CreateFortify:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Fortify EC2 creation
+  CreateInspec:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Conditional for Inspec EC2 creation
+  CreateArchiva:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Archiva EC2 creation
+  NexusVolumeSize:
+    Type: Number
+    MinValue: 1
+    MaxValue: 200
+    Default: 3
+    Description: Ebs volume size for nexus
+  UseNexusSnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional to create EBS volume from an existing snapshot.
+  NexusEBSSnapshot:
+    Type: String
+    Default: snap-0d3634755e683ef40
+    Description: Snapshot to be used when UseNexusSnapshot is true.
+  SonarVolumeSize:
+    Type: Number
+    MinValue: 1
+    MaxValue: 200
+    Default: 9
+    Description: Ebs volume size for Sonar
+  UseSonarSnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional to create EBS volume from an existing snapshot.
+  SonarEBSSnapshot:
+    Type: String
+    Default: snap-0189de117940b335a
+    Description: Snapshot to be used when UseSonarSnapshot is true.
+  FortifyEBSCreation:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Fortify EBS creation
+  FortifyVolumeSize:
+    Type: Number
+    MinValue: 10
+    MaxValue: 200
+    Default: 100
+    Description: Ebs volume size for fortify
+  UseFortifySnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Conditional to create EBS volume from an existing snapshot.
+  FortifyEBSSnapshot:
+    Type: String
+    Default: snap-09416b1bc6f12c61a
+    Description: Snapshot to be used when UseFortifySnapshot is true.
+  InspecEBSCreation:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Conditional for Inspec EBS creation
+  InspecVolumeSize:
+    Type: Number
+    MinValue: 10
+    MaxValue: 200
+    Default: 10
+    Description: Ebs volume size for inspec
+  UseInspecSnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Conditional to create EBS volume from an existing snapshot.
+  InspecEBSSnapshot:
+    Type: String
+    Default: ""
+    Description: Snapshot to be used when UseInspecSnapshot is true.
+  ArchivaEBSCreation:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Archiva EBS creation
+  ArchivaVolumeSize:
+    Type: Number
+    MinValue: 10
+    MaxValue: 200
+    Default: 10
+    Description: Ebs volume size for Archiva
+  UseArchivaSnapshot:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional to create EBS volume from an existing snapshot.
+  ArchivaEBSSnapshot:
+    Type: String
+    Default: snap-0c6b7d8456078b805
+    Description: Snapshot to be used when UseArchivaSnapshot is true.
+
+Conditions:
+  CreateNexus: !Equals [ !Ref CreateNexus, true ]
+  CreateSonar: !Equals [ !Ref CreateSonar, true ]
+  CreateFortify: !Equals [ !Ref CreateFortify, true ]
+  CreateInspec: !Equals [ !Ref CreateInspec, true ]
+  CreateArchiva: !Equals [ !Ref CreateArchiva, true ]
+  CreateFortifyEBS: !And
+    - !Equals [ !Ref FortifyEBSCreation, true ]
+    - !Condition CreateFortify
+  CreateInspecEBS: !And
+    - !Equals [ !Ref InspecEBSCreation, true ]
+    - !Condition CreateInspec
+  # CreateJenkinsEFS: !Equals [ !Ref JenkinsEFSCreation, true ]
+  JenkinsSnapshot: !Equals [ !Ref UseJenkinsSnapshot, true]
+  FortifySnapshot: !Equals [ !Ref UseFortifySnapshot, true]
+  InspecSnapshot: !Equals [ !Ref UseInspecSnapshot, true]
+  NexusSnapshot: !Equals [ !Ref UseNexusSnapshot, true]
+  SonarSnapshot: !Equals [ !Ref UseSonarSnapshot, true]
+  ArchivaSnapshot: !Equals [ !Ref UseArchivaSnapshot, true]
+
+Resources:
+
+###################### Nexus ######################
+  Nexus:
+    Type: AWS::EC2::Instance
+    Condition: CreateNexus
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsDeployKey
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-nexus"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+      UserData:
+        Fn::Base64: !Sub |
+              #!/bin/bash -ex
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              # Setup EBS volume
+              mkdir /var/nexus;
+              if [ ${UseNexusSnapshot} != true ]; then
+                mkfs.xfs /dev/xvdh -L NEXUS;
+              fi
+              mount /dev/xvdh /var/nexus;
+              cp /etc/fstab /etc/fstab.orig;
+              echo "LABEL=NEXUS                           /var/nexus   xfs    defaults,noatime 0 2" >> /etc/fstab;
+              mount -a;
+              touch /user-data-complete;
+  NexusEBS:
+    Type: AWS::EC2::Volume
+    Condition: CreateNexus
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: true
+      KmsKeyId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+      Size: !Ref NexusVolumeSize
+      SnapshotId: !If [NexusSnapshot, !Ref NexusEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-nexus-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  NexusMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Condition: CreateNexus
+    Properties:
+      InstanceId: !Ref Nexus
+      VolumeId: !Ref NexusEBS
+      Device: /dev/sdh
+
+  NexusTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateNexus
+    Properties:
+      Name: !Sub nexus-tg-${Nexus}
+      Port: 8081
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-VPC"
+      Targets:
+        - Id: !Ref Nexus
+
+###################### Sonar ######################
+
+  Sonar:
+    Type: AWS::EC2::Instance
+    Condition: CreateSonar
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsDeployKey
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-sonar"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+      UserData:
+        Fn::Base64: !Sub |
+              #!/bin/bash -ex
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              # Setup EBS volume
+              mkdir /sonar-ebs;
+              if [ ${UseSonarSnapshot} != "true" ]; then
+                mkfs.xfs /dev/xvdh -L SONAR;
+              fi
+              mount /dev/xvdh /sonar-ebs;
+              if [ ${UseSonarSnapshot} != "true" ]; then
+                mkdir /sonar-ebs/mysql;
+                mkdir /sonar-ebs/sonar;
+              fi
+              ln -s /sonar-ebs/mysql /var/lib/mysql;
+              ln -s /sonar-ebs/sonar /usr/local/sonar;
+              semanage fcontext -a -t mysqld_db_t '/sonar-ebs/mysql(/.*)?';
+              restorecon -R /sonar-ebs/mysql;
+              cp /etc/fstab /etc/fstab.orig;
+              echo "LABEL=SONAR                           /sonar-ebs   xfs    defaults,noatime 0 2" >> /etc/fstab;
+              mount -a;
+              if [ ${UseSonarSnapshot} == "true" ]; then
+                cp /sonar-ebs/my.cnf /root/.my.cnf;
+                chmod 600 /root/.my.cnf;
+              fi
+              touch /user-data-complete;
+  SonarEBS:
+    Type: AWS::EC2::Volume
+    Condition: CreateSonar
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: true
+      KmsKeyId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+      Size: !Ref SonarVolumeSize
+      SnapshotId: !If [SonarSnapshot, !Ref SonarEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-sonar-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  SonarMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Condition: CreateSonar
+    Properties:
+      InstanceId: !Ref Sonar
+      VolumeId: !Ref SonarEBS
+      Device: /dev/sdh
+
+  SonarTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateSonar
+    Properties:
+      Name: !Sub sonar-tg-${Sonar}
+      Port: 9000
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-VPC"
+      Targets:
+        - Id: !Ref Sonar
+
+##################### Fortify #####################
+
+  Fortify:
+    Type: AWS::EC2::Instance
+    Condition: CreateFortify
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsDeployKey
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-FortifyInstanceProfile"
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-fortify"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+      UserData:
+        Fn::Base64: !Sub |
+              #!/bin/bash -ex
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              if [ -f /usr/local/aws/bin/pip ]; then /usr/local/aws/bin/pip install --upgrade awscli; fi
+              yum install git -y
+              if [ ${FortifyEBSCreation} == "true" ]; then
+                # Setup EBS volume
+                mkdir /var/fortify;
+                if [ ${UseFortifySnapshot} != "true" ]; then
+                  mkfs.xfs /dev/xvdf -L FORTIFY;
+                fi
+                mount /dev/xvdf /var/fortify;
+                chown ec2-user:ec2-user /var/fortify;
+                cp /etc/fstab /etc/fstab.orig;
+                echo "LABEL=FORTIFY                           /var/fortify   xfs    defaults,noatime 0 2" >> /etc/fstab;
+                mount -a;
+              fi
+              touch /user-data-complete;
+  FortifyEBS:
+    Type: AWS::EC2::Volume
+    Condition: CreateFortifyEBS
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: !If  [CreateFortifyEBS, true, !Ref "AWS::NoValue"]
+      KmsKeyId:
+        Fn::If:
+         - "CreateFortifyEBS"
+         - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+         - !Ref "AWS::NoValue"
+      Size: !Ref FortifyVolumeSize
+      SnapshotId: !If [FortifySnapshot, !Ref FortifyEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-fortify-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  FortifyMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Condition: CreateFortifyEBS
+    Properties:
+      InstanceId: !Ref Fortify
+      VolumeId: !Ref FortifyEBS
+      Device: /dev/sdf
+
+################### Chef Inspec ###################
+
+  Inspec:
+    Type: AWS::EC2::Instance
+    Condition: CreateInspec
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsDeployKey
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-InspecInstanceProfile"
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-inspec"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+      UserData:
+        Fn::Base64: !Sub |
+              #!/bin/bash -ex
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              if [ ${InspecEBSCreation} == "true" ]; then
+                # Setup EBS volume
+                if [ ${UseInspecSnapshot} != "true" ]; then
+                  mkfs.xfs /dev/xvdh -L INSPEC;
+                fi
+                mount /dev/xvdh /var/inspec;
+                chown ec2-user:ec2-user /var/inspec;
+                cp /etc/fstab /etc/fstab.orig;
+                echo "LABEL=INSPEC                           /var/inspec   xfs    defaults,noatime 0 2" >> /etc/fstab;
+                mount -a;
+              fi
+              touch /user-data-complete;
+  InspecEBS:
+    Type: AWS::EC2::Volume
+    Condition: CreateInspecEBS
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: !If  [CreateInspecEBS, true, !Ref "AWS::NoValue"]
+      KmsKeyId:
+        Fn::If:
+          - "CreateInspecEBS"
+          - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+          - !Ref "AWS::NoValue"
+      Size: !Ref InspecVolumeSize
+      SnapshotId: !If [InspecSnapshot, !Ref InspecEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-inspec-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  InspecMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Condition: CreateInspecEBS
+    Properties:
+      InstanceId: !Ref Inspec
+      VolumeId: !Ref InspecEBS
+      Device: /dev/sdf
+
+###################### Archiva ######################
+
+  Archiva:
+    Type: AWS::EC2::Instance
+    Condition: CreateArchiva
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsDeployKey
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-archiva"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+      UserData:
+        Fn::Base64: !Sub |
+              #!/bin/bash -ex
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              # Setup EBS volume
+              mkdir /var/archiva;
+              if [ ${UseArchivaSnapshot} != true ]; then
+                mkfs.xfs /dev/xvdh -L ARCHIVA;
+              fi
+              mount /dev/xvdh /var/archiva;
+              cp /etc/fstab /etc/fstab.orig;
+              echo "LABEL=ARCHIVA                           /var/archiva   xfs    defaults,noatime 0 2" >> /etc/fstab;
+              mount -a;
+              touch /user-data-complete;
+  ArchivaEBS:
+    Type: AWS::EC2::Volume
+    Condition: CreateArchiva
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: true
+      KmsKeyId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+      Size: !Ref ArchivaVolumeSize
+      SnapshotId: !If [ArchivaSnapshot, !Ref ArchivaEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-archiva-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  ArchivaMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Condition: CreateArchiva
+    Properties:
+      InstanceId: !Ref Archiva
+      VolumeId: !Ref ArchivaEBS
+      Device: /dev/sdh
+
+  ArchivaTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateArchiva
+    Properties:
+      Name: !Sub archiva-tg-${Archiva}
+      Port: 8080
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-VPC"
+      Targets:
+        - Id: !Ref Archiva
+
+##################### Jenkins #####################
+
+  # JenkinsEFS:
+  #   Type: AWS::EFS::FileSystem
+  #   Condition: CreateJenkinsEFS
+  #   Properties:
+  #     PerformanceMode: generalPurpose
+  #     FileSystemTags:
+  #     - Key: Name
+  #       Value: !Sub "${ProjectName}-${VPCName}-devops-jenkins-efs"
+  #     - Key: environment
+  #       Value: devops
+  # JenkinsMountTarget:
+  #   Type: AWS::EFS::MountTarget
+  #   Condition: CreateJenkinsEFS
+  #   Properties:
+  #     FileSystemId: !Ref JenkinsEFS
+  #     SubnetId:
+  #       Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+  #     SecurityGroups:
+  #       - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+
+  Jenkins:
+    Type: AWS::EC2::Instance
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      ImageId: !Ref GoldImageId
+      InstanceType: "m4.large"
+      KeyName: !Ref JenkinsMasterKey
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-JenkinsInstanceProfile"
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-EnterpriseAccessSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-VPNPrivateSG"
+        - Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSG"
+      SubnetId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsSubnetId"
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-jenkins"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+        - Key: cpm backup
+          Value: Daily
+        - Key: Schedule Type
+          Value: Daily
+      UserData:
+          Fn::Base64:
+            !Sub
+              - |
+                #!/bin/bash -ex
+                exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+                if [ -f /usr/local/aws/bin/pip ]; then /usr/local/aws/bin/pip install --upgrade awscli; fi
+                yum install git -y
+                aws ssm get-parameters --names JenkinsDeployKey --with-decryption --region us-east-1 --query "Parameters[*].Value" --output text > /home/ec2-user/.ssh/id_rsa 2>&1
+                export TOKEN=`aws ssm get-parameters --names GithubToken --with-decryption --region us-east-1 --query "Parameters[*].Value" --output text`
+                git clone -b ${GithubBranch} --single-branch https://${GithubUN}:$TOKEN@${GithubRepo} /home/ec2-user/devops-mgmt
+                /bin/sh /home/ec2-user/devops-mgmt/setup_scripts/bootstrap.sh ${CreateNexus} ${CreateSonar} ${CreateFortify} ${CreateInspec} ${CreateArchiva} ${UseJenkinsSnapshot} ${VPCName} ${AWSRegion} ${ProjectName} ${GithubUN} $TOKEN ${GithubRepo} ${GithubBranch} ${AWS::StackName} ${FrameworkStackName}
+              # - JenkinsEFS_ID: !If [CreateJenkinsEFS, !Ref JenkinsEFS, "false"]
+              - CreateNexus: {'Fn::ImportValue': !Sub '${FrameworkStackName}-CreateNexus' }
+                CreateSonar: {'Fn::ImportValue': !Sub '${FrameworkStackName}-CreateSonar' }
+                CreateFortify: {'Fn::ImportValue': !Sub '${FrameworkStackName}-CreateFortify' }
+                CreateInspec: {'Fn::ImportValue': !Sub '${FrameworkStackName}-CreateInspec' }
+                CreateArchiva: {'Fn::ImportValue': !Sub '${FrameworkStackName}-CreateArchiva' }
+                VPCName: {'Fn::ImportValue': !Sub '${FrameworkStackName}-VPCName' }
+                AWSRegion: {'Fn::ImportValue': !Sub '${FrameworkStackName}-AWSRegion' }
+                ProjectName: {'Fn::ImportValue': !Sub '${FrameworkStackName}-ProjectName' }
+
+  JenkinsEBS:
+    Type: AWS::EC2::Volume
+    Properties:
+      AvailabilityZone:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsAZ"
+      Encrypted: true
+      KmsKeyId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-DevOpsKmsId"
+      Size: !Ref JenkinsVolumeSize
+      SnapshotId: !If [JenkinsSnapshot, !Ref JenkinsEBSSnapshot, !Ref "AWS::NoValue"]
+      Tags:
+        - Key: Name
+          Value: !Sub
+              - "${ProjectName}-${VPCName}-devops-jenkins-ebs"
+              - { "ProjectName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-ProjectName"}, "VPCName": {'Fn::ImportValue': !Sub "${FrameworkStackName}-VPCName"}}
+        - Key: environment
+          Value: devops
+  JenkinsMountPoint:
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref Jenkins
+      VolumeId: !Ref JenkinsEBS
+      Device: /dev/sdh
+
+  JenkinsTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub jenkins-tg-${Jenkins}
+      Port: 8080
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub "${FrameworkStackName}-VPC"
+      Targets:
+        - Id: !Ref Jenkins
+
+Outputs:
+  JenkinsIP:
+    Value: !GetAtt Jenkins.PrivateIp
+  JenkinsTargetGroup:
+    Value: !Ref JenkinsTargetGroup
+  SonarIP:
+    Value: !GetAtt Sonar.PrivateIp
+    Condition: CreateSonar
+  SonarTargetGroup:
+    Value: !Ref SonarTargetGroup
+    Condition: CreateSonar
+  NexusIP:
+    Value: !GetAtt Nexus.PrivateIp
+    Condition: CreateNexus
+  NexusTargetGroup:
+    Value: !Ref NexusTargetGroup
+    Condition: CreateNexus
+  FortifyIP:
+    Value: !GetAtt Fortify.PrivateIp
+    Condition: CreateFortify
+  InspecIP:
+    Value: !GetAtt Inspec.PrivateIp
+    Condition: CreateInspec
+  ArchivaIP:
+    Value: !GetAtt Archiva.PrivateIp
+    Condition: CreateArchiva
+  ArchivaTargetGroup:
+    Value: !Ref ArchivaTargetGroup
+    Condition: CreateArchiva

@@ -1,0 +1,668 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: hios
+    Description: project name to be used for labeling (lowercase)
+  AWSRegion:
+    Type: String
+    AllowedValues: [us-east-1, us-east-2, us-west-1, us-west-2]
+    Default: "us-east-1"
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0724c624a5f91a6c7
+    Description: mgt VPC provided by CCS
+  VPCName:
+    Type: String
+    Default: mgt
+    Description: VPC name (lowercase)
+  DevOpsVpcCidr:
+    Type: String
+    Default: '10.232.4.0/22'
+    Description: "DevOps VPC Cidr block (ex. 0.0.0.0/0)"
+  DevOpsAZ:
+    Type: String
+    Default: "us-east-1a"
+    AllowedValues: [us-east-1a, us-east-1b]
+  DevOpsSubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Default: subnet-0f8adac8d31e17036
+    Description: managemnt subnet provided by CCS
+  LoadBalancerSubnet1:
+    Type: String
+    Default: subnet-049f1f2f27a402538
+    Description: Choose which subnets the Application Load Balancer should be deployed to, default should be dmz.
+  LoadBalancerSubnet2:
+    Type: String
+    Default: subnet-0bd22cba4bfdb0b3d
+    Description: Choose which subnets the Application Load Balancer should be deployed to, default should be dmz.
+  EnterpriseAccessSG:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-083270b3c6cdf26f1
+    Description: enterprise access security group provided by CCS
+  VPNPrivateSG:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0594fde6a7d6941c3
+    Description: vpn-private security group provided by CCS
+  VPNPublicSG:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-02f41901ff5bd386e
+    Description: vpn-public security group provided by CCS
+  HostedZoneName:
+    Type: String
+    Default: hios-mgmt.mp.cmscloud.local.
+    Description: hosted zone provided by CCS
+  HostedZoneId:
+    Type: String
+    Default: Z2D80QE19R4CYM
+    Description: ID of the hosted zone provided by CCS
+  DevOpsBucketName:
+    Type: String
+    Default: "hios-devops"
+    Description: DevOps bucket name.
+  DevOpsKmsId:
+    Type: String
+    Default: cfd9fc8b-5b95-4c13-a27f-519a4903f127
+    Description: encryption key used to secure the parameter store, created during the inital setup
+  CreateNexus:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Nexus EC2 creation
+  CreateSonar:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Sonar EC2 creation
+  CreateFortify:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Fortify EC2 creation
+  CreateInspec:
+    Type: String
+    AllowedValues: [true, false]
+    Default: false
+    Description: Conditional for Inspec EC2 creation
+  CreateArchiva:
+    Type: String
+    AllowedValues: [true, false]
+    Default: true
+    Description: Conditional for Archiva EC2 creation
+
+
+Conditions:
+  CreateNexus: !Equals [ !Ref CreateNexus, true ]
+  CreateSonar: !Equals [ !Ref CreateSonar, true ]
+  CreateFortify: !Equals [ !Ref CreateFortify, true ]
+  CreateInspec: !Equals [ !Ref CreateInspec, true ]
+  CreateArchiva: !Equals [ !Ref CreateArchiva, true ]
+
+Resources:
+
+############################ Roles ############################
+  FortifyRole:
+    Type: AWS::IAM::Role
+    Condition: CreateFortify
+    Properties:
+      RoleName: !Sub "devops-mgmt-fortify-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+  FortifyRolePolicies:
+    Type: AWS::IAM::Policy
+    Condition: CreateFortify
+    Properties:
+      PolicyName: !Sub "devops-mgmt-fortify-policy"
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:ListBucket'
+              - 's3:GetObject'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}"
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}/*"
+      Roles:
+        - !Ref FortifyRole
+  FortifyInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CreateFortify
+    Properties:
+      Path: /
+      Roles:
+        - !Ref FortifyRole
+
+  InspecRole:
+    Type: AWS::IAM::Role
+    Condition: CreateInspec
+    Properties:
+      RoleName: !Sub "devops-mgmt-inspec-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+  InspecRolePolicies:
+    Type: AWS::IAM::Policy
+    Condition: CreateInspec
+    Properties:
+      PolicyName: !Sub "devops-mgmt-inspec-policy"
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:ListBucket'
+              - 's3:GetObject'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}"
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}/inspec-installer/*"
+      Roles:
+        - !Ref InspecRole
+  InspecInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CreateInspec
+    Properties:
+      Path: /
+      Roles:
+        - !Ref InspecRole
+
+  JenkinsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "devops-mgmt-jenkins-role"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+  JenkinsRolePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "devops-mgmt-jenkins-policy"
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 'ec2:AssociateDhcpOptions'
+              - 'ec2:AssociateAddress'
+              - 'ec2:AssociateIamInstanceProfile'
+              - 'ec2:AttachVolume'
+              - 'ec2:AuthorizeSecurityGroupIngress'
+              - 'ec2:AuthorizeSecurityGroupEgress'
+              - 'ec2:CopyImage'
+              - 'ec2:CopySnapshot'
+              - 'ec2:CreateImage'
+              - 'ec2:CreateKeyPair'
+              - 'ec2:CreateSecurityGroup'
+              - 'ec2:CreateSnapshot'
+              - 'ec2:CreateTags'
+              - 'ec2:CreateVolume'
+              - 'ec2:DeleteSecurityGroup'
+              - 'ec2:DeleteSnapshot'
+              - 'ec2:DeleteVolume'
+              - 'ec2:DeleteKeyPair'
+              - 'ec2:DeregisterImage'
+              - 'ec2:DetachVolume'
+              - 'ec2:Describe*'
+              - 'ec2:ModifyVolumeAttribute'
+              - 'ec2:ModifyImageAttribute'
+              - 'ec2:ModifyInstanceAttribute'
+              - 'ec2:ModifyVolume'
+              - 'ec2:MonitorInstances'
+              - 'ec2:RegisterImage'
+              - 'ec2:RevokeSecurityGroupEgress'
+              - 'ec2:RevokeSecurityGroupIngress'
+              - 'ec2:RunInstances'
+              - 'ec2:StopInstances'
+              - 'ec2:StartInstances'
+              - 'ec2:TerminateInstances'
+              - 'ec2:UpdateSecurityGroupRuleDescriptionsIngress'
+              - 'ec2:UpdateSecurityGroupRuleDescriptionsEgress'
+              - 'elasticloadbalancing:*'
+              - 'ssm:DescribeParameters'
+              - 'route53:*'
+              - 'elasticfilesystem:DescribeMountTargets'
+              - 'cloudformation:CreateUploadBucket'
+              - 'cloudformation:ListExports'
+              - 'cloudformation:EstimateTemplateCost'
+              - 'cloudformation:DescribeAccountLimits'
+              - 'cloudformation:ListStacks'
+              - 'cloudformation:ListImports'
+              - 'cloudformation:GetTemplateSummary'
+              - 'cloudformation:ValidateTemplate'
+              - 'iam:RemoveRoleFromInstanceProfile'
+              - 'iam:CreateRole'
+              - 'iam:AttachRolePolicy'
+              - 'iam:PutRolePolicy'
+              - 'iam:AddRoleToInstanceProfile'
+              - 'iam:GetRole'
+              - 'iam:DeleteRole'
+              - 'iam:CreateInstanceProfile'
+              - 'iam:PassRole'
+              - 'iam:DeleteRolePolicy'
+              - 'iam:DeleteInstanceProfile'
+              - 'iam:CreatePolicy'
+            Effect: Allow
+            Resource: '*'
+          - Action:
+              - 'cloudformation:DeleteStackInstances'
+              - 'cloudformation:CancelUpdateStack'
+              - 'cloudformation:UpdateStackInstances'
+              - 'cloudformation:ListStackSetOperations'
+              - 'cloudformation:ListStackInstances'
+              - 'cloudformation:UpdateTerminationProtection'
+              - 'cloudformation:DescribeStackResource'
+              - 'cloudformation:UpdateStackSet'
+              - 'cloudformation:CreateChangeSet'
+              - 'cloudformation:CreateStackInstances'
+              - 'cloudformation:DeleteChangeSet'
+              - 'cloudformation:ContinueUpdateRollback'
+              - 'cloudformation:ListStackSetOperationResults'
+              - 'cloudformation:DescribeStackEvents'
+              - 'cloudformation:DescribeStackSetOperation'
+              - 'cloudformation:UpdateStack'
+              - 'cloudformation:StopStackSetOperation'
+              - 'cloudformation:DescribeChangeSet'
+              - 'cloudformation:CreateStackSet'
+              - 'cloudformation:ExecuteChangeSet'
+              - 'cloudformation:ListStackResources'
+              - 'cloudformation:SetStackPolicy'
+              - 'cloudformation:DescribeStackInstance'
+              - 'cloudformation:DescribeStackResources'
+              - 'cloudformation:SignalResource'
+              - 'cloudformation:DeleteStackSet'
+              - 'cloudformation:DescribeStacks'
+              - 'cloudformation:GetStackPolicy'
+              - 'cloudformation:DescribeStackSet'
+              - 'cloudformation:ListStackSets'
+              - 'cloudformation:CreateStack'
+              - 'cloudformation:GetTemplate'
+              - 'cloudformation:DeleteStack'
+              - 'cloudformation:ListChangeSets'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:cloudformation:*:*:stack/devops-mgmt*/*"
+              - !Sub "arn:aws:cloudformation:*:*:stack/hios*/*"
+              - !Sub "arn:aws:cloudformation:*:*:stackset/devops-mgmt*:*"
+              - !Sub "arn:aws:cloudformation:*:*:stackset/hios*:*"
+
+          - Action:
+              - 'ssm:GetParameters'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/JenkinsDeployKey"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/JenkinsAdminPassword"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/NexusAdminPassword"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/GithubToken"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/SonarQubeToken"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ARCS-API-TOKEN"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/ansible*"
+          - Action:
+              - 'kms:Decrypt'
+              - 'kms:CreateGrant'
+              - 'kms:ListGrants'
+              - 'kms:RevokeGrant'
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/${DevOpsKmsId}"
+          - Action:
+              - 's3:*'
+            Effect: Allow
+            Resource:
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}*"
+              - !Sub "arn:aws:s3:::${DevOpsBucketName}/*"
+      Roles:
+        - !Ref JenkinsRole
+  JenkinsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref JenkinsRole
+
+####################### Security Groups #######################
+
+  DevOpsSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub devops-mgmt-sg
+      GroupDescription: Connection to all of DevOps VPC
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref DevOpsVpcCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref DevOpsVpcCidr
+
+  CMSGithubSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: cms-github-acccess
+      GroupDescription: ALB security group to allow access from CMS
+      SecurityGroupIngress:
+        - CidrIp: "52.203.194.136/32"
+          FromPort: -1
+          IpProtocol: -1
+          ToPort: -1
+        - CidrIp: "52.20.26.200/32"
+          FromPort: -1
+          IpProtocol: -1
+          ToPort: -1
+      VpcId: !Ref "VPC"
+
+######################### Networking ##########################
+
+  JenkinsLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub devops-mgmt-jenkins-alb
+      Subnets:
+        - !Ref LoadBalancerSubnet1
+        - !Ref LoadBalancerSubnet2
+      SecurityGroups:
+        - !Ref VPNPublicSG
+        - !Ref CMSGithubSG
+      Tags:
+        - Key: Name
+          Value: devops-mgmt-jenkins-alb
+        - Key: owner
+          Value: devops
+  JenkinsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: "text/plain"
+            MessageBody: "Please update the listener to forward to the jenkins target group. Use the existing jenkins job to automatically update or manually update"
+            StatusCode: "503"
+      LoadBalancerArn: !Ref JenkinsLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  JenkinsR53:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub "jenkins.${HostedZoneName}"
+      Type: CNAME
+      TTL: '900'
+      ResourceRecords:
+        - !GetAtt JenkinsLoadBalancer.DNSName
+
+  SonarLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateSonar
+    Properties:
+      Name: !Sub devops-mgmt-sonar-alb
+      Subnets:
+        - !Ref LoadBalancerSubnet1
+        - !Ref LoadBalancerSubnet2
+      SecurityGroups:
+        - !Ref VPNPublicSG
+        - !Ref CMSGithubSG
+      Tags:
+        - Key: Name
+          Value: devops-mgmt-sonar-alb
+        - Key: owner
+          Value: devops
+  SonarListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateSonar
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: "text/plain"
+            MessageBody: "Please update the listener to forward to the sonar target group. Use the existing jenkins job to automatically update or manually update"
+            StatusCode: "503"
+      LoadBalancerArn: !Ref SonarLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  SonarR53:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: CreateSonar
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub "sonarqube.${HostedZoneName}"
+      Type: CNAME
+      TTL: '900'
+      ResourceRecords:
+        - !GetAtt SonarLoadBalancer.DNSName
+
+  NexusLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateNexus
+    Properties:
+      Name: !Sub devops-mgmt-nexus-alb
+      Subnets:
+        - !Ref LoadBalancerSubnet1
+        - !Ref LoadBalancerSubnet2
+      SecurityGroups:
+        - !Ref VPNPublicSG
+        - !Ref CMSGithubSG
+      Tags:
+        - Key: Name
+          Value: devops-mgmt-nexus-alb
+        - Key: owner
+          Value: devops
+  NexusListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateNexus
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: "text/plain"
+            MessageBody: "Please update the listener to forward to the nexus target group. Use the existing jenkins job to automatically update or manually update"
+            StatusCode: "503"
+      LoadBalancerArn: !Ref NexusLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  NexusR53:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: CreateNexus
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub "nexus.${HostedZoneName}"
+      Type: CNAME
+      TTL: '900'
+      ResourceRecords:
+        - !GetAtt NexusLoadBalancer.DNSName
+
+  ArchivaLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateArchiva
+    Properties:
+      Name: !Sub devops-mgmt-archiva-alb
+      Subnets:
+        - !Ref LoadBalancerSubnet1
+        - !Ref LoadBalancerSubnet2
+      SecurityGroups:
+        - !Ref VPNPublicSG
+        - !Ref CMSGithubSG
+      Tags:
+        - Key: Name
+          Value: devops-mgmt-archiva-alb
+        - Key: owner
+          Value: devops
+  ArchivaListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateArchiva
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: "text/plain"
+            MessageBody: "Please update the listener to forward to the nexus target group. Use the existing jenkins job to automatically update or manually update"
+            StatusCode: "503"
+      LoadBalancerArn: !Ref ArchivaLoadBalancer
+      Port: 80
+      Protocol: HTTP
+  ArchivaR53:
+    Type: 'AWS::Route53::RecordSet'
+    Condition: CreateArchiva
+    Properties:
+      HostedZoneName: !Ref HostedZoneName
+      Name: !Sub "archiva.${HostedZoneName}"
+      Type: CNAME
+      TTL: '900'
+      ResourceRecords:
+        - !GetAtt ArchivaLoadBalancer.DNSName
+
+Outputs:
+######### Parameter Outputs #########
+  ProjectName:
+    Value: !Sub "${ProjectName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ProjectName"
+  AWSRegion:
+    Value: !Sub "${AWSRegion}"
+    Export:
+      Name: !Sub "${AWS::StackName}-AWSRegion"
+  VPC:
+    Value: !Sub "${VPC}"
+    Export:
+      Name: !Sub "${AWS::StackName}-VPC"
+  VPCName:
+    Value: !Sub "${VPCName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-VPCName"
+  DevOpsAZ:
+    Value: !Sub "${DevOpsAZ}"
+    Export:
+      Name: !Sub "${AWS::StackName}-DevOpsAZ"
+  DevOpsVpcCidr:
+    Value: !Sub "${DevOpsVpcCidr}"
+    Export:
+      Name: !Sub "${AWS::StackName}-DevOpsVpcCidr"
+  DevOpsSubnetId:
+    Value: !Sub "${DevOpsSubnetId}"
+    Export:
+      Name: !Sub "${AWS::StackName}-DevOpsSubnetId"
+  DevOpsKmsId:
+    Value: !Sub "${DevOpsKmsId}"
+    Export:
+      Name: !Sub "${AWS::StackName}-DevOpsKmsId"
+  LoadBalancerSubnet1:
+    Value: !Sub "${LoadBalancerSubnet1}"
+    Export:
+      Name: !Sub "${AWS::StackName}-LoadBalancerSubnet1"
+  LoadBalancerSubnet2:
+    Value: !Sub "${LoadBalancerSubnet2}"
+    Export:
+      Name: !Sub "${AWS::StackName}-LoadBalancerSubnet2"
+  EnterpriseAccessSG:
+    Value: !Sub "${EnterpriseAccessSG}"
+    Export:
+      Name: !Sub "${AWS::StackName}-EnterpriseAccessSG"
+  VPNPublicSG:
+    Value: !Sub "${VPNPublicSG}"
+    Export:
+      Name: !Sub "${AWS::StackName}-VPNPublicSG"
+  VPNPrivateSG:
+    Value: !Sub "${VPNPrivateSG}"
+    Export:
+      Name: !Sub "${AWS::StackName}-VPNPrivateSG"
+  CreateNexus:
+    Value: !Sub "${CreateNexus}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CreateNexus"
+  CreateSonar:
+    Value: !Sub "${CreateSonar}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CreateSonar"
+  CreateFortify:
+    Value: !Sub "${CreateFortify}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CreateFortify"
+  CreateInspec:
+    Value: !Sub "${CreateInspec}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CreateInspec"
+  CreateArchiva:
+    Value: !Sub "${CreateArchiva}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CreateArchiva"
+
+######### Resource Outputs #########
+  FortifyInstanceProfile:
+    Value: !Ref FortifyInstanceProfile
+    Condition: CreateFortify
+    Export:
+      Name: !Sub "${AWS::StackName}-FortifyInstanceProfile"
+  InspecInstanceProfile:
+    Value: !Ref InspecInstanceProfile
+    Condition: CreateInspec
+    Export:
+      Name: !Sub "${AWS::StackName}-InspecInstanceProfile"
+  JenkinsInstanceProfile:
+    Value: !Ref JenkinsInstanceProfile
+    Export:
+      Name: !Sub "${AWS::StackName}-JenkinsInstanceProfile"
+  DevOpsSG:
+    Value: !Ref DevOpsSG
+    Export:
+      Name: !Sub "${AWS::StackName}-DevOpsSG"
+  JenkinsLoadBalancer:
+    Value: !Ref JenkinsLoadBalancer
+    Export:
+      Name: !Sub "${AWS::StackName}-JenkinsLoadBalancer"
+  JenkinsListener:
+    Value: !Ref JenkinsListener
+    Export:
+      Name: !Sub "${AWS::StackName}-JenkinsListener"
+  SonarLoadBalancer:
+    Value: !Ref SonarLoadBalancer
+    Condition: CreateSonar
+    Export:
+      Name: !Sub "${AWS::StackName}-SonarLoadBalancer"
+  SonarListener:
+    Value: !Ref SonarListener
+    Condition: CreateSonar
+    Export:
+      Name: !Sub "${AWS::StackName}-SonarListener"
+  NexusLoadBalancer:
+    Value: !Ref NexusLoadBalancer
+    Condition: CreateNexus
+    Export:
+      Name: !Sub "${AWS::StackName}-NexusLoadBalancer"
+  NexusListener:
+    Value: !Ref NexusListener
+    Condition: CreateNexus
+    Export:
+      Name: !Sub "${AWS::StackName}-NexusListener"
+  ArchivaLoadBalancer:
+    Value: !Ref ArchivaLoadBalancer
+    Condition: CreateArchiva
+    Export:
+      Name: !Sub "${AWS::StackName}-ArchivaLoadBalancer"
+  ArchivaListener:
+    Value: !Ref ArchivaListener
+    Condition: CreateArchiva
+    Export:
+      Name: !Sub "${AWS::StackName}-ArchivaListener"
