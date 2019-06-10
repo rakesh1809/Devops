@@ -1,0 +1,88 @@
+---
+
+- hosts: localhost
+  vars_files:
+    - "{{ jenkins_home }}/cfn_generated_vars.yml"
+  tasks:
+
+    - name: Get the latest base gold image
+      command: "aws ec2 describe-images --region us-east-1 --filters \"Name=name,Values=EAST-RH 7-6*\" \"Name=owner-id,Values=842420567215\" --query 'sort_by(Images, &CreationDate)[-1].[ImageId][0]' --output text"
+      register: gold_image
+
+    - name: Set variable for latest gold image and set default variables
+      set_fact:
+        gold_image_id:              "{{ gold_image.stdout }}"
+        use_sonar_snapshot:         "false"
+        sonar_gold_snapshot_id:     " "
+        use_nexus_snapshot:         "false"
+        nexus_gold_snapshot_id:     " "
+        use_fortify_snapshot:       "false"
+        fortify_gold_snapshot_id:   " "
+
+    - debug:
+        msg: "{{ gold_image_id }}"
+
+    ### JENKINS
+    - name: Get gold snapshot id for jenkins
+      command: "aws ec2 describe-snapshots --region us-east-1 --filters Name=tag:Name,Values=*-devops-jenkins-snapshot Name=tag:purpose,Values=gold-image-deploy --query \"Snapshots[*].{ID:SnapshotId}\" --output=text"
+      register: jenkins_gold_snapshot
+
+    - name: Set variable for jenkins gold snapshot
+      set_fact:
+        jenkins_gold_snapshot_id: "{{ jenkins_gold_snapshot.stdout }}"
+
+    ### SONAR
+    - name: Sonar tasks
+      block:
+        - name: Get gold snapshot id for sonar
+          command: "aws ec2 describe-snapshots --region us-east-1 --filters Name=tag:Name,Values=*-devops-sonar-snapshot Name=tag:purpose,Values=gold-image-deploy --query \"Snapshots[*].{ID:SnapshotId}\" --output=text"
+          register: sonar_gold_snapshot
+        - name: Set sonar variables
+          set_fact:
+            use_sonar_snapshot: "true"
+            sonar_gold_snapshot_id: "{{ sonar_gold_snapshot.stdout }}"
+      when: create_sonar
+
+    ### NEXUS
+    - name: Nexus tasks
+      block:
+        - name: Get gold snapshot id for nexus
+          command: "aws ec2 describe-snapshots --region us-east-1 --filters Name=tag:Name,Values=*-devops-nexus-snapshot Name=tag:purpose,Values=gold-image-deploy --query \"Snapshots[*].{ID:SnapshotId}\" --output=text"
+          register: nexus_gold_snapshot
+        - name: Set nexus variables
+          set_fact:
+            use_nexus_snapshot: "true"
+            nexus_gold_snapshot_id: "{{ nexus_gold_snapshot.stdout }}"
+      when: create_nexus
+
+    ### FORTIFY
+    - name: Fortify tasks
+      block:
+        - name: Get gold snapshot id for fortify
+          command: "aws ec2 describe-snapshots --region us-east-1 --filters Name=tag:Name,Values=*-devops-fortify-snapshot Name=tag:purpose,Values=gold-image-deploy --query \"Snapshots[*].{ID:SnapshotId}\" --output=text"
+          register: fortify_gold_snapshot
+        - name: Set fortify variables
+          set_fact:
+            use_fortify_snapshot: "true"
+            fortify_gold_snapshot_id: "{{ fortify_gold_snapshot.stdout }}"
+      when: create_fortify
+
+    - debug:
+        msg: "---{{ use_fortify_snapshot }}----{{ use_nexus_snapshot }}"
+
+    - name: Deploy DaaS cloudformation Stack
+      cloudformation:
+        state: "{{ cloudformation_state }}"
+        region: "{{ aws_region }}"
+        stack_name: "devops-mgmt-{{ project_name }}-{{ ansible_date_time.date }}-{{ ansible_date_time.hour }}-{{ansible_date_time.minute }}"
+        template: ../../../cloudformation/devops-mgmt.yml
+        template_parameters:
+          GoldImageId: "{{ gold_image_id }}"
+          UseJenkinsSnapshot: "true"
+          JenkinsEBSSnapshot: "{{ jenkins_gold_snapshot_id }}"
+          UseSonarSnapshot: "{{ use_sonar_snapshot | lower }}"
+          SonarEBSSnapshot: "{{ sonar_gold_snapshot_id }}"
+          UseNexusSnapshot: "{{ use_nexus_snapshot | lower }}"
+          NexusEBSSnapshot: "{{ nexus_gold_snapshot_id }}"
+          UseFortifySnapshot: "{{ use_fortify_snapshot | lower }}"
+          FortifyEBSSnapshot: "{{ fortify_gold_snapshot_id }}"
