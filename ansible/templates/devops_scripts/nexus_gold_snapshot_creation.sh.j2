@@ -1,0 +1,10 @@
+#! /usr/bin/sh
+
+{% if create_nexus %}
+ansible -i /var/lib/jenkins/devops_hosts nexus -u ec2-user -a "sudo service nexus stop"
+sudo bash {{ jenkins_home }}/devops_scripts/snapshot_backup.sh {{ project_name }} nexus {{ vpc_name }} us-east-1 true
+ansible -i /var/lib/jenkins/devops_hosts nexus -u ec2-user -a "sudo service nexus start"
+sleep 10
+{% else %}
+echo "nexus is not part of the devops stack"
+{% endif %}

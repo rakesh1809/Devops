@@ -1,0 +1,5 @@
+#! /usr/bin/sh
+
+sudo service jenkins stop
+sudo bash {{ jenkins_home }}/devops_scripts/snapshot_backup.sh {{ project_name }} jenkins {{ vpc_name }} us-east-1 true
+sudo service jenkins start

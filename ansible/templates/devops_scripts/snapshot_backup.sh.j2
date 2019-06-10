@@ -1,0 +1,152 @@
+#!/bin/bash
+export PATH=$PATH:/usr/local/bin/:/usr/bin
+
+#{{ machine }}
+## Automatic EBS Volume Snapshot Creation & Clean-Up Script
+#
+# Some code and snippets taken from repo: https://github.com/CaseyLabs/aws-ec2-ebs-automatic-snapshot-bash
+#
+# Additonal credits: Log function by Alan Franzoni; Pre-req check by Colin Johnson
+#
+# PURPOSE: This Bash script can be used to take automatic snapshots of your Linux EC2 instance. Script process:
+# - Provide project name used during the inital cloudforamtion creation for the environmnet
+# - Provide the machine name that hte ebs volume resides on (jenkins, nexus, sonar, etc...)
+# - Provide the region in which the volume resides
+# - Provide conditional to determin if the snapshot is used for a gold image deploy
+# - Take a snapshot of each attached volume
+# - The script will then delete all associated snapshots taken by the script that are older than 7 days
+#
+# DISCLAIMER: This script deletes snapshots (though only the ones that it creates). 
+# Make sure that you understand how the script works. No responsibility accepted in event of accidental data loss.
+#
+# Additional updates to the script provided by DaaS Team 
+
+
+
+# Safety feature: exit script if error is returned, or if variables not set.
+# Exit if a pipeline results in an error.
+
+## Variable Declartions ##
+if [[ ! "$1" ]]; then
+    echo "Argument 1 should be the name of the project used in the cloudforamtion script" 1>&2
+    exit 1
+elif [[ ! "$2" ]]; then
+    echo "Argument 2 should be the name of the server (jenkins, nexus, sonar, etc...)" 1>&2
+    exit 1
+elif [[ ! "$3" ]]; then
+    echo "Argument 3 should be the name of the vpc used in the cloudforamtion script" 1>&2
+    exit 1
+elif [[ ! "$4" ]]; then
+    echo "Argument 4 should be the region of the volume" 1>&2
+    exit 1
+elif [[ ($5 != "true") && ($5 != "false") ]]; then
+    echo "Argument 5 should be true or false (no quotes) for the conditional gold image deploy tag" 1>&2
+    exit 1
+fi
+
+set -ue
+set -o pipefail
+
+# Set project name
+project=$1
+# Set machine name
+machine=$2
+#set vpc name
+vpc_name=$3
+# Set region
+region=$4
+# Set conditional for gold image patching
+gold_image_deploy=$5
+
+stack_name={{ aws_stack_name }}
+# Set Logging Options
+logfile="/var/log/ebs-snapshot.log"
+logfile_max_lines="5000"
+# How many days do you wish to retain backups for? Default: 7 days
+retention_days="8"
+retention_date_in_seconds=$(date +%s --date "$retention_days days ago")
+
+## Function Declarations ##
+# Function: Setup logfile and redirect stdout/stderr.
+log_setup() {
+    # Check if logfile exists and is writable.
+    ( [ -e "$logfile" ] || touch "$logfile" ) && [ ! -w "$logfile" ] && echo "ERROR: Cannot write to $logfile. Check permissions or sudo access." && exit 1
+
+    tmplog=$(tail -n $logfile_max_lines $logfile 2>/dev/null) && echo "${tmplog}" > $logfile
+   	exec > >(tee -a $logfile)
+    exec 2>&1
+}
+
+# Function: Log an event.
+log() {
+    echo "[$(date +"%Y-%m-%d"+"%T")]: $*"
+}
+
+# Function: Confirm that the AWS CLI and related tools are installed.
+prerequisite_check() {
+	for prerequisite in aws wget; do
+		hash $prerequisite &> /dev/null
+		if [[ $? == 1 ]]; then
+			echo "In order to use this script, the executable \"$prerequisite\" must be installed." 1>&2; exit 70
+		fi
+	done
+}
+
+# Function: Cleanup all snapshots associated with this instance that are older than $retention_days
+cleanup_snapshots() {
+	log "detemining snapshot list..."
+	snapshot_list=$(aws ec2 describe-snapshots --region $region --output=text --filters "Name=volume-id,Values=$volume_id" "Name=tag:createdBy,Values=automated-backup" --query Snapshots[].SnapshotId)
+	for snapshot in $snapshot_list; do
+		log "Checking age of $snapshot..."
+		# Check age of snapshot
+		snapshot_date=$(aws ec2 describe-snapshots --region $region --output=text --snapshot-ids $snapshot --query Snapshots[].StartTime | awk -F "T" '{printf "%s\n", $1}')
+		snapshot_date_in_seconds=$(date "--date=$snapshot_date" +%s)
+		snapshot_description=$(aws ec2 describe-snapshots --snapshot-id $snapshot --region $region --query Snapshots[].Description)
+
+		if (( $snapshot_date_in_seconds <= $retention_date_in_seconds )); then
+			log "DELETING snapshot $snapshot. Description: $snapshot_description ..."
+			aws ec2 delete-snapshot --region $region --snapshot-id $snapshot
+		else
+			log "Not deleting snapshot $snapshot. Description: $snapshot_description ..."
+		fi
+	done
+}	
+
+log_setup
+# Get Instance Details
+log "detemining instance id for $machine"
+instance_id=$(aws ec2 describe-instances --region $region --filters Name=tag:Name,Values=$project-$vpc_name-devops-$machine Name=instance-state-name,Values=running Name=tag:aws:cloudformation:stack-name,Values=$stack_name --query "Reservations[*].Instances[*].InstanceId" --output text)
+snapshot_description="$project-$vpc_name-devops-$machine-backup-$(date +%Y-%m-%d)"
+log "detemining volume-id"
+volume_id=$(aws ec2 describe-volumes --region $region --filters Name=attachment.instance-id,Values=$instance_id Name=status,Values=available,in-use Name=tag:Name,Values=$project-$vpc_name-devops-$machine-ebs --query Volumes[].VolumeId --output text)
+
+log "################################################"
+log "project                =   $project"
+log "machine                =   $machine"
+log "region                 =   $region"
+log "gold image deploy      =   $gold_image_deploy"
+log "instance_id            =   $instance_id"
+log "snapshot_description   =   $snapshot_description"
+log "volume_id              =   $volume_id"
+
+# Determine if an existing gold image snapshot is already created 
+existing_snapshot_id=$(aws ec2 describe-snapshots --region $region --filters Name=tag:Name,Values=$project-$vpc_name-devops-$machine-snapshot Name=tag:purpose,Values=gold-image-deploy --query "Snapshots[*].{ID:SnapshotId}" --output=text)
+if [[ $existing_snapshot_id != "" ]]; then
+	log "deleting existing snapshot for the gold image deploy" 
+	aws ec2 create-tags --region $region --resource $existing_snapshot_id --tags Key=purpose,Value=gold-image-deploy-old
+	aws ec2 delete-snapshot --region $region --snapshot-id $existing_snapshot_id
+else
+	log "there is no existing snapshot for the gold image deploy"
+fi
+log "creating snapshot of $machine ebs volume..."
+snapshot_id=$(aws ec2 create-snapshot --region $region --output=text --description $snapshot_description --volume-id $volume_id --query SnapshotId)
+log "creating a name for the new snapshot"
+aws ec2 create-tags --region $region --resource $snapshot_id --tags Key=Name,Value=$project-$vpc_name-devops-$machine-snapshot
+aws ec2 create-tags --region $region --resource $snapshot_id --tags Key=createdBy,Value=automated-backup
+if [[ $gold_image_deploy == "true" ]]; then
+	log "creating tag to signify the gold image deploy snapshot..."
+	aws ec2 create-tags --region $region --resource $snapshot_id --tags Key=purpose,Value=gold-image-deploy
+fi
+log "creating automated-backup tag..."
+#aws ec2 create-volume --region us-east-1 --availability-zone us-east-1a --snapshot-id $snapshot_id --tag-specifications "ResourceType=volume,Tags=[{Key=Name,Value=devops-mgmt-$project-$machine-ebs-$(date +%Y-%m-%d)}]"
+cleanup_snapshots
