@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  This template deploys an Application Load Balancer listening on HTTP/HTTPS to the DMZ subnets
+  of a hosting VPC. NIHNet Security Group is attached to the ALB.  Additional Security Groups
+  must be added manually.
+
+Parameters:
+
+  ADOName:
+    Type: String
+    Default: hios
+    Description: An ADO name that will be prefixed to resource names
+
+  CreatorsName:
+    Type: String
+    Default: Dan
+    Description: Tag who created this ALB.
+
+
+  VPC:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0724c624a5f91a6c7
+    Description: Choose which VPC the Application Load Balancer should be deployed to.
+
+  Subnet1:
+    Type: String
+    Default: subnet-049f1f2f27a402538
+    Description: Choose which subnets the Application Load Balancer should be deployed to.
+
+  Subnet2:
+    Type: String
+    Default: subnet-0bd22cba4bfdb0b3d
+    Description: Choose which subnets the Application Load Balancer should be deployed to.
+
+  JenkinsEC2Id:
+    Type: String
+    Default: i-0b119f87641edcd94
+    Description: Enter the Jenkins Instance ID to configure the ALB with.
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0594fde6a7d6941c3
+    Description: Select the Security Group to connect the application on private VPN.
+
+  # CMSGithubSG:
+  #   Type: AWS::EC2::SecurityGroup::Id
+  #   Default: sg-0a21e2161255c9624
+  #   Description: Select the Security Group to apply to the Application Load Balancer.
+
+
+Resources:
+  ##############################################
+  # ALB
+  ##############################################
+  ALBLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref ADOName
+      Subnets:
+        - !Ref Subnet1
+        - !Ref Subnet2
+      SecurityGroups:
+        - !Ref SecurityGroup
+        - !Ref CMSGithubSG
+      Tags:
+        - Key: Name
+          Value: !Ref ADOName
+        - Key: Creator
+          Value: !Ref CreatorsName
+
+  CMSGithubSG:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: !Sub JenkinsALB-${ADOName}
+      GroupDescription: ALB security group to connect to CMS github
+      SecurityGroupIngress:
+        - CidrIp: "52.203.194.136/32"
+          FromPort: -1
+          IpProtocol: -1
+          ToPort: -1
+        - CidrIp: "52.20.26.200/32"
+          FromPort: -1
+          IpProtocol: -1
+          ToPort: -1
+      VpcId: !Ref "VPC"
+
+
+  JKSTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ADOName}-JKS-TG
+      Port: 8080
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref JenkinsEC2Id
+      VpcId: !Ref VPC
+
+  JKSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref JKSTargetGroup
+      # Priority: 20
+      LoadBalancerArn: !Ref ALBLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+Outputs:
+  LoadBalancer:
+    Description: A reference to the Application Load Balancer
+    Value: !Ref ALBLoadBalancer
+
+  LoadBalancerUrl:
+    Description: The URL of the ALB
+    Value: !GetAtt ALBLoadBalancer.DNSName
