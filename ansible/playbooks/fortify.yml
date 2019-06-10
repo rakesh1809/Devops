@@ -1,0 +1,69 @@
+---
+
+- hosts: localhost
+  tasks:
+  - name: Write Fortify key to known hosts
+    shell: "ssh-keyscan {{ groups['fortify'][0] }} >> /home/ec2-user/.ssh/known_hosts"
+    become: yes
+
+  - file:
+      path: /home/ec2-user/.ssh/known_hosts
+      owner: ec2-user
+      group: ec2-user
+      mode: 0644
+    become: yes
+
+- hosts: fortify
+  vars_files:
+    - ../vars/fortify_vars.yml
+  pre_tasks:
+    - include: ./common/wait-for-user-data.yml
+  tasks:
+    - name: create Fortify directory if they don't exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: 0755
+      become: yes
+      with_items:
+        - "{{ fortify_dest }}"
+        - "{{ fortify_dest }}/{{ fortify_dest_dir }}"
+
+    - name: Copy fortify files from s3
+      shell: "aws s3 cp s3://{{ fortify_bucket }}/Fortify_SCA_and_Apps_{{ fortify_version }}_Linux.tar.gz {{ fortify_path }}"
+
+    - name: Unarchive the installation files for fortify
+      unarchive:
+        src: "{{ fortify_src }}"
+        dest: "{{ fortify_dest }}/{{ fortify_dest_dir }}"
+        remote_src: yes
+
+    - name: Copy fortify license from s3
+      shell: "aws s3 cp s3://{{ fortify_bucket }}/fortify.license {{ license_path }}"
+
+    - name: Copy jenkins slave agent from jenkins
+      shell: "curl -o {{ fortify_path }}/agent.jar {{ groups['jenkins'][0] }}:8080/jnlpJars/agent.jar"
+
+    - name: Create Fortify install directory
+      command: "mkdir -p {{ fortify_install_dir }}"
+
+    - name: Create fortify.options file
+      copy:
+        dest: "{{ fortify_dest }}/{{ fortify_dest_dir}}/Fortify_SCA_and_Apps_{{ fortify_version }}_linux_x64.run.options"
+        content: |
+          fortify_license_path={{ fortify_dest }}/fortify.license
+          installdir={{ fortify_install_dir }}
+        mode: 0644
+
+    - name: Run fortify silent install, sleep then fortify update
+      command: "{{ item }}"
+      with_items:
+        - "{{ fortify_dest }}/{{ fortify_dest_dir }}/Fortify_SCA_and_Apps_{{ fortify_version }}_linux_x64.run --mode unattended"
+        - "sleep 60"
+        - "{{ fortify_install_dir }}/bin/fortifyupdate"
+
+  roles:
+    - { role: '../roles/third_party/geerlingguy.java', become: yes }
+   

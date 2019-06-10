@@ -1,0 +1,64 @@
+---
+
+- hosts: localhost
+  vars_files:
+    - ../vars/jenkins_vars.yml
+    - "{{ jenkins_home }}/cfn_generated_vars.yml"
+  tasks:
+    - name: Write Nexus key to known hosts
+      shell: "ssh-keyscan {{ groups['nexus'][0] }} >> /home/ec2-user/.ssh/known_hosts"
+      become: yes
+
+    - name: Change permisions
+      file:
+        path: /home/ec2-user/.ssh/known_hosts
+        owner: ec2-user
+        group: ec2-user
+        mode: 0644
+      become: yes
+
+    - name: Get the Nexus password from the parameter store
+      command: "aws ssm get-parameters --names NexusAdminPassword --with-decryption --region {{ aws_region }} --query \"Parameters[*].Value\" --output text"
+      register: nexus_admin_password_result
+
+    - name: Set the Nexus password
+      set_fact:
+        nexus_admin_password: "{{ nexus_admin_password_result.stdout }}"
+
+
+- hosts: nexus
+  vars_files:
+    - ../vars/nexus_vars.yml
+
+  pre_tasks:
+    - name: Ensure nexus group exists
+      group:
+        name: "{{ nexus_os_group }}"
+        state: present
+      become: yes
+    - name: Ensure nexus user exists
+      user:
+        name: "{{ nexus_os_user }}"
+        group: "{{ nexus_os_group }}"
+      become: yes
+    - name: Ensure nexus_data_dir {{ nexus_data_dir }} exists
+      file:
+        path: "{{ nexus_data_dir }}"
+        state: directory
+        owner: "{{ nexus_os_user }}"
+        group: "{{ nexus_os_group }}"
+        recurse: yes
+      become: yes
+      
+    - include: ./common/wait-for-user-data.yml
+    - name: Store the nexus password as the nexus_admin_password
+      set_fact:
+        nexus_admin_password: "{{ hostvars['localhost']['nexus_admin_password'] }}"
+      when: hostvars['localhost']['nexus_admin_password'] is defined
+  tasks:
+    - debug:
+        msg: "---- {{ inventory_hostname }} ----"
+  roles:
+    - { role: '../roles/third_party/geerlingguy.java', become: yes }
+    - { role: '../roles/third_party/geerlingguy.apache', become: yes }
+    - { role: '../roles/third_party/ansible-nexus3-oss-master', become: yes }
