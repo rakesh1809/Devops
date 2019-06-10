@@ -1,0 +1,10 @@
+#fortify paths and files
+fortify_path: "/home/ec2-user/"
+fortify_src: "/home/ec2-user/Fortify_SCA_and_Apps_{{ fortify_version }}_Linux.tar"
+fortify_dest: "/var/fortify"
+fortify_dest_dir: "Fortify_SCA_and_Apps_{{ fortify_version }}_Linux"
+license_path: "/var/fortify/"
+fortify_install_dir: "/var/fortify/Fortify"
+java_packages: java-1.8.0-openjdk
+fortify_bucket: "hios-devops"
+fortify_version: "18.20"

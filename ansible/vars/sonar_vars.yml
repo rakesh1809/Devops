@@ -1,0 +1,6 @@
+java_packages: java-1.8.0-openjdk
+sonar_version: 6.7.4
+sonar_download_url: "https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-{{sonar_version}}.zip"
+sonar_user: sonar
+sonar_group: sonar
+mysql_datadir: /var/lib/mysql

@@ -1,0 +1,5 @@
+---
+
+#Inspec paths and files
+inspec_path: "/home/ec2-user/"
+java_packages: java-1.8.0-openjdk
